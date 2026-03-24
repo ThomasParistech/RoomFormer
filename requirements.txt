@@ -1,4 +1,4 @@
-opencv-python
+opencv-python-headless==4.8.1.78
 numpy==1.19.0
 matplotlib==3.6.2
 imageio==2.19.3

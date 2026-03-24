@@ -1,0 +1,45 @@
+FROM nvidia/cuda:11.1.1-cudnn8-devel-ubuntu20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# Install miniconda
+RUN apt-get update && apt-get install -y --no-install-recommends wget git && \
+    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p /opt/conda && \
+    rm /tmp/miniconda.sh && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+ENV PATH=/opt/conda/bin:$PATH
+
+# Create conda environment using conda-forge to avoid Anaconda ToS prompt
+RUN conda create -n roomformer python=3.8 -y --override-channels -c conda-forge
+
+# Install PyTorch with CUDA 11.1
+RUN conda run -n roomformer pip install \
+    torch==1.9.0+cu111 torchvision==0.10.0+cu111 \
+    -f https://download.pytorch.org/whl/torch_stable.html
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN conda run -n roomformer pip install -r requirements.txt
+
+# Copy full repo
+COPY . .
+
+# Set CUDA environment for building extensions without a GPU
+ENV FORCE_CUDA=1
+ENV TORCH_CUDA_ARCH_LIST="8.6"
+ENV CUDA_HOME=/usr/local/cuda
+
+# Patch models/ops/setup.py: docker build has no GPU access, so force CUDA compilation via env var
+RUN sed -i 's/if torch.cuda.is_available() and CUDA_HOME is not None:/if (torch.cuda.is_available() or os.environ.get("FORCE_CUDA", "0") == "1") and CUDA_HOME is not None:/' models/ops/setup.py
+
+# Compile deformable-attention modules
+RUN cd models/ops && conda run -n roomformer sh make.sh
+
+# Compile differentiable rasterization module
+RUN cd diff_ras && conda run -n roomformer python setup.py build develop
+
+ENV PYTHONPATH=/app
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "roomformer", "python", "fork/scripts/extract_polygons.py"]
