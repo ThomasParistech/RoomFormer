@@ -137,12 +137,13 @@ def main(args):
 
     save_dir = os.path.join(os.path.dirname(args.checkpoint), output_dir)
     evaluate_floor(
-                   model, args.dataset_name, data_loader_eval, 
-                   device, save_dir, 
-                   plot_pred=args.plot_pred, 
-                   plot_density=args.plot_density, 
+                   model, args.dataset_name, data_loader_eval,
+                   device, save_dir,
+                   plot_pred=args.plot_pred,
+                   plot_density=args.plot_density,
                    plot_gt=args.plot_gt,
-                   semantic_rich=args.semantic_classes>0
+                   semantic_rich=args.semantic_classes>0,
+                   scene_polys_out=getattr(args, 'scene_polys_out', None),
                    )
 
 

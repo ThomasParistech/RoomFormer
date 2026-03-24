@@ -202,7 +202,7 @@ def evaluate(model, criterion, dataset_name, data_loader, device):
     return stats
 
 @torch.no_grad()
-def evaluate_floor(model, dataset_name, data_loader, device, output_dir, plot_pred=True, plot_density=True, plot_gt=True, semantic_rich=False):
+def evaluate_floor(model, dataset_name, data_loader, device, output_dir, plot_pred=True, plot_density=True, plot_gt=True, semantic_rich=False, scene_polys_out=None):
     model.eval()
 
     quant_result_dict = None
@@ -259,19 +259,6 @@ def evaluate_floor(model, dataset_name, data_loader, device, output_dir, plot_pr
 
         # process per scene
         for i in range(pred_logits.shape[0]):
-            
-            if dataset_name == 'stru3d':
-                if int(scene_ids[i]) in wrong_s3d_annotations_list:
-                    continue
-                curr_opts = copy.deepcopy(opts)
-                curr_opts.scene_id = "scene_0" + str(scene_ids[i])
-                curr_data_rw = S3DRW(curr_opts, mode = "test")
-                evaluator = Evaluator(curr_data_rw, curr_opts)
-            elif dataset_name == 'scenecad':
-                gt_polys = [gt_instances[i].gt_masks.polygons[0][0].reshape(-1,2).astype(np.int)]
-                evaluator = Evaluator_SceneCAD()
-
-            print("Running Evaluation for scene %s" % scene_ids[i])
 
             fg_mask_per_scene = fg_mask[i]
             pred_corners_per_scene = pred_corners[i]
@@ -307,27 +294,43 @@ def evaluate_floor(model, dataset_name, data_loader, device, output_dir, plot_pr
                             window_doors.append(corners)
                             window_doors_types.append(pred_room_label_per_scene[j])
 
+            if scene_polys_out is not None:
+                scene_polys_out[str(scene_ids[i])] = [r.tolist() for r in room_polys]
 
-            if dataset_name == 'stru3d':
-                if not semantic_rich:
-                    quant_result_dict_scene = evaluator.evaluate_scene(room_polys=room_polys)
+            if scene_polys_out is None:
+                if dataset_name == 'stru3d':
+                    if int(scene_ids[i]) in wrong_s3d_annotations_list:
+                        continue
+                    curr_opts = copy.deepcopy(opts)
+                    curr_opts.scene_id = "scene_0" + str(scene_ids[i])
+                    curr_data_rw = S3DRW(curr_opts, mode = "test")
+                    evaluator = Evaluator(curr_data_rw, curr_opts)
+                elif dataset_name == 'scenecad':
+                    gt_polys = [gt_instances[i].gt_masks.polygons[0][0].reshape(-1,2).astype(np.int)]
+                    evaluator = Evaluator_SceneCAD()
+
+                print("Running Evaluation for scene %s" % scene_ids[i])
+
+                if dataset_name == 'stru3d':
+                    if not semantic_rich:
+                        quant_result_dict_scene = evaluator.evaluate_scene(room_polys=room_polys)
+                    else:
+                        quant_result_dict_scene = evaluator.evaluate_scene(
+                                                                room_polys=room_polys,
+                                                                room_types=room_types,
+                                                                window_door_lines=window_doors,
+                                                                window_door_lines_types=window_doors_types)
+
+                elif dataset_name == 'scenecad':
+                    quant_result_dict_scene = evaluator.evaluate_scene(room_polys=room_polys, gt_polys=gt_polys)
+
+                if quant_result_dict is None:
+                    quant_result_dict = quant_result_dict_scene
                 else:
-                    quant_result_dict_scene = evaluator.evaluate_scene(
-                                                            room_polys=room_polys, 
-                                                            room_types=room_types, 
-                                                            window_door_lines=window_doors, 
-                                                            window_door_lines_types=window_doors_types)
-    
-            elif dataset_name == 'scenecad':
-                quant_result_dict_scene = evaluator.evaluate_scene(room_polys=room_polys, gt_polys=gt_polys)
+                    for k in quant_result_dict.keys():
+                        quant_result_dict[k] += quant_result_dict_scene[k]
 
-            if quant_result_dict is None:
-                quant_result_dict = quant_result_dict_scene
-            else:
-                for k in quant_result_dict.keys():
-                    quant_result_dict[k] += quant_result_dict_scene[k]
-
-            scene_counter += 1
+                scene_counter += 1
 
             if plot_pred:
                 if semantic_rich:
@@ -363,6 +366,9 @@ def evaluate_floor(model, dataset_name, data_loader, device, output_dir, plot_pr
                 # plot predicted polygon overlaid on the density map
                 pred_room_map = np.clip(pred_room_map + density_map, 0, 255)
                 cv2.imwrite(os.path.join(output_dir, '{}_pred_room_map.png'.format(scene_ids[i])), pred_room_map)
+
+    if scene_polys_out is not None:
+        return
 
     for k in quant_result_dict.keys():
         quant_result_dict[k] /= float(scene_counter)
