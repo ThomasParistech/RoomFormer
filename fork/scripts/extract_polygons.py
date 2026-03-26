@@ -54,7 +54,7 @@ def main(dataset_name: str) -> None:
 
     out_path = os.path.join(output_dir, "polygons.json")
     with open(out_path, "w") as f:
-        json.dump({"dataset": dataset_cfg["canonical_name"], "model": "ROOMFORMER", "data": scene_polys}, f)
+        json.dump({"dataset": dataset_cfg["canonical_name"], "model": "RoomFormer", "data": scene_polys}, f)
     print(f"Saved {len(scene_polys)} scene predictions to {out_path}")
 
 
